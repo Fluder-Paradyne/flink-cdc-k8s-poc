@@ -1,0 +1,74 @@
+---
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  flinkConfiguration:
+    classloader.resolve-order: parent-first
+    execution.checkpointing.interval: ${CHECKPOINT_INTERVAL}
+    execution.checkpointing.min-pause: ${CHECKPOINT_MIN_PAUSE}
+    execution.checkpointing.savepoint-dir: ${SAVEPOINT_DIR}
+    execution.checkpointing.dir: ${CHECKPOINT_DIR}
+    fs.s3.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    s3.fs.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    fs.s3a.access.key: ${S3_ACCESS_KEY}
+    fs.s3a.secret.key: ${S3_SECRET_KEY}
+    fs.s3a.endpoint: s3.amazonaws.com
+    fs.s3a.path.style.access: 'false'
+    fs.s3a.aws.credentials.provider: org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
+    fs.s3a.region: us-east-1
+    heartbeat.timeout: 60000
+    log4j.logger.org.apache.flink.cdc.common.data.binary.BinaryRecordData: DEBUG
+    log4j.logger.org.apache.flink.cdc.connectors.postgres.source.PostgresEventDeserializer: DEBUG
+    log4j.logger.org.apache.flink.cdc.connectors.iceberg.sink.utils.IcebergTypeUtils: DEBUG
+  flinkVersion: v1_20
+  image: ${FLINK_IMAGE}
+  imagePullPolicy: Always
+  job:
+    args:
+      - '--use-mini-cluster'
+      - /opt/flink/flink-cdc-3.5.0/conf/${PIPELINE_FILE_NAME}
+    entryClass: org.apache.flink.cdc.cli.CliFrontend
+    jarURI: 'local:///opt/flink/lib/flink-cdc-dist-3.5.0.jar'
+    parallelism: 1
+    state: running
+    upgradeMode: savepoint
+  jobManager:
+    replicas: 1
+    resource:
+      cpu: 2
+      memory: 8192m
+  podTemplate:
+    apiVersion: v1
+    kind: Pod
+    spec:
+      containers:
+        # don't modify this name
+        - name: flink-main-container
+          volumeMounts:
+            - mountPath: /opt/flink/flink-cdc-3.5.0/conf
+              name: flink-cdc-pipeline-config
+            - mountPath: /opt/flink/hadoop-conf
+              name: hadoop-conf
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /opt/flink/hadoop-conf
+      volumes:
+        - configMap:
+            name: ${CONFIG_MAP_NAME}
+          name: flink-cdc-pipeline-config
+        - configMap:
+            name: ${CONFIG_MAP_NAME}
+            items:
+              - key: core-site.xml
+                path: core-site.xml
+          name: hadoop-conf
+  restartNonce: 0
+  serviceAccount: flink
+  taskManager:
+    resource:
+      cpu: 2
+      memory: 8192m
